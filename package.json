@@ -37,7 +37,7 @@
 	},
 	"files": [
 		"dist",
-		"examples"
+		"examples/oidc-mock.yaml"
 	],
 	"scripts": {
 		"build": "rm -rf dist && tsc -p tsconfig.build.json",

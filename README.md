@@ -46,12 +46,18 @@ oidc-mock is a small Node package instead:
 
 ## Quick start
 
-oidc-mock is not on npm yet. Install it from GitHub – the package builds itself on install:
+oidc-mock is not on npm yet. Install the built package from the
+[latest release](https://github.com/strehk/oidc-mock/releases/latest):
 
 ```sh
-npm i -D github:strehk/oidc-mock
+npm i -D https://github.com/strehk/oidc-mock/releases/download/v0.1.0/oidc-mock-0.1.0.tgz
+# or: bun add -d <same URL>
 npx oidc-mock init            # writes an example oidc-mock.yaml
 ```
+
+Installing straight from the repository (`npm i -D github:strehk/oidc-mock`) works with npm,
+which builds the package on install. Bun does not run that build step for Git dependencies, so
+use the release tarball there.
 
 ### With Vite (SvelteKit, Nuxt, Astro, Remix, plain Vite, …)
 
@@ -354,7 +360,14 @@ bun install
 bun test          # end-to-end with openid-client, plus the Vite plugin behind a foreign host
 bun run dev       # CLI with examples/oidc-mock.yaml, restarts on change
 bun run typecheck
-bun run build     # → dist/, also runs on install from GitHub
+bun run build     # → dist/
+```
+
+Releases: bump `version` in `package.json`, then push a tag `v<version>`. The workflow tests,
+builds and attaches the packed tarball to a GitHub release.
+
+```sh
+git tag v0.1.1 && git push --tags
 ```
 
 The runtime needs Node 20 or later. Bun is only used for development. The dependencies are

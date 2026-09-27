@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build
+      - name: Check that the tag matches package.json
+        run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - run: npm pack
+      - name: Create release with the tarball
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" oidc-mock-*.tgz \
+            --title "$GITHUB_REF_NAME" --generate-notes \
+            --notes "Install: \`npm i -D https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/oidc-mock-${GITHUB_REF_NAME#v}.tgz\`"

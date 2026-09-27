@@ -23,7 +23,7 @@
 		"node": ">=20"
 	},
 	"bin": {
-		"oidc-mock": "./dist/cli.js"
+		"oidc-mock": "dist/cli.js"
 	},
 	"exports": {
 		".": {

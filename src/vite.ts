@@ -1,7 +1,7 @@
 import type { IncomingMessage, OutgoingHttpHeaders, ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
 import type { Connect, Plugin, PreviewServer, ViteDevServer } from 'vite';
-import { startServer, type MockServer } from './server.js';
+import { attachToRunning, startServer, type MockServer } from './server.js';
 
 export type OidcMockPluginOptions = {
 	/** YAML file, relative to the Vite root. Default: `oidc-mock.yaml`. */
@@ -29,7 +29,17 @@ function acquire(configFile: string, port: number | undefined) {
 	const id = `${configFile}#${port ?? ''}`;
 	let server = running.get(id);
 	if (!server) {
-		server = startServer({ config: configFile, port });
+		server = startServer({ config: configFile, port }).catch(async (error: NodeJS.ErrnoException & { port?: number }) => {
+			if (error.code !== 'EADDRINUSE') throw error;
+			const attached = await attachToRunning({ config: configFile, port });
+			if (!attached) {
+				throw new Error(
+					`Port ${error.port} is taken by something that is not this oidc-mock. ` +
+						'Pick another port in the config or with oidcMock({ port }).'
+				);
+			}
+			return attached;
+		});
 		server.catch(() => running.delete(id));
 		running.set(id, server);
 	}
@@ -58,7 +68,10 @@ export function oidcMock(options: OidcMockPluginOptions = {}): Plugin {
 				const log = server.config.logger;
 				log.info(
 					`  ➜  oidc-mock: ${started.discoveryUrl}\n` +
-						`               ${started.config().users.length} users from ${configFile}`
+						`               ${started.config().users.length} users from ${configFile}` +
+						(started.server
+							? ''
+							: '\n               port taken by another oidc-mock with this issuer – sharing its back channel')
 				);
 			},
 			(error: Error) => server.config.logger.error(`[oidc-mock] ${error.message}`)

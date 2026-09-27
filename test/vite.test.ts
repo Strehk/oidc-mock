@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import * as client from 'openid-client';
 import { createServer, type ViteDevServer } from 'vite';
 import { oidcMock } from '../src/vite.js';
@@ -60,7 +60,8 @@ afterAll(async () => {
 
 async function discoveryUrl() {
 	const running = (globalThis as { __oidcMock?: Map<string, Promise<{ discoveryUrl: string }>> }).__oidcMock!;
-	return (await running.values().next().value!).discoveryUrl;
+	const [, mock] = [...running].find(([id]) => id.includes(basename(dir)))!;
+	return (await mock).discoveryUrl;
 }
 
 test('the redirect to the login page becomes relative', async () => {

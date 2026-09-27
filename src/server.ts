@@ -27,7 +27,8 @@ export type MockServer = {
 	discoveryUrl: string;
 	config: () => MockConfig;
 	provider: Provider;
-	server: Server;
+	/** Missing when another process owns the port, see `attachToRunning`. */
+	server?: Server;
 	close(): Promise<void>;
 };
 
@@ -85,4 +86,27 @@ export async function startServer(options: StartOptions = {}): Promise<MockServe
 				server.closeAllConnections();
 			})
 	};
+}
+
+/**
+ * For when the port is taken by another oidc-mock with the same issuer – typically a second dev
+ * server in the same checkout. Codes and refresh tokens are self-contained JWTs, and both
+ * processes read the same key file, so a code issued here is redeemed there without shared
+ * state. This process then only serves the front channel.
+ *
+ * Returns `undefined` if the port belongs to something else.
+ */
+export async function attachToRunning(options: StartOptions): Promise<MockServer | undefined> {
+	const initial = loadInitialConfig(options);
+	const discoveryUrl = `${initial.issuer}/.well-known/openid-configuration`;
+	try {
+		const response = await fetch(discoveryUrl, { signal: AbortSignal.timeout(2000) });
+		const { issuer } = (await response.json()) as { issuer?: string };
+		if (issuer !== initial.issuer) return undefined;
+	} catch {
+		return undefined;
+	}
+	const config = watchConfig(initial);
+	const provider = createProvider({ config, key: await loadOrCreateKey(initial.key_file) });
+	return { issuer: initial.issuer, discoveryUrl, config, provider, close: async () => {} };
 }

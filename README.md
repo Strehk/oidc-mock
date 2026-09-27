@@ -50,7 +50,7 @@ oidc-mock is not on npm yet. Install the built package from the
 [latest release](https://github.com/strehk/oidc-mock/releases/latest):
 
 ```sh
-npm i -D https://github.com/strehk/oidc-mock/releases/download/v0.1.0/oidc-mock-0.1.0.tgz
+npm i -D https://github.com/strehk/oidc-mock/releases/download/v0.1.1/oidc-mock-0.1.1.tgz
 # or: bun add -d <same URL>
 npx oidc-mock init            # writes an example oidc-mock.yaml
 ```
@@ -206,6 +206,13 @@ flowchart LR
   comes back there as well.
 
 Your app code does not change. Only its authority URL points at the mock.
+
+**Several dev servers at once.** Start a second `vite dev` in the same project, e.g. in a Git
+worktree or next to a test run, and it finds the back channel port taken. If an oidc-mock with
+the same issuer answers there, the second server shares it and serves only the login page. That
+works because codes and refresh tokens are self-contained signed JWTs and both servers use the
+same key file. If something else holds the port, the plugin says so and leaves the dev server
+running.
 
 > [!NOTE]
 > Vite refuses unknown host names by default. If you open the dev server by host name instead of

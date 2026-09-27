@@ -1,6 +1,6 @@
 {
 	"name": "oidc-mock",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "OpenID Connect provider for local development: users and claims in one YAML file, a login page to pick them, and a Vite plugin that makes it work behind --host.",
 	"license": "MIT",
 	"author": "Tade Strehk <tade@strehk.eu>",
@@ -66,5 +66,8 @@
 		"openid-client": "^6.8.8",
 		"typescript": "^7.0.2",
 		"vite": "^8.3.1"
+	},
+	"publishConfig": {
+		"access": "public"
 	}
 }

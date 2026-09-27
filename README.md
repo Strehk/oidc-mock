@@ -1,12 +1,15 @@
 # oidc-mock
 
+[![npm](https://img.shields.io/npm/v/oidc-mock)](https://www.npmjs.com/package/oidc-mock)
+[![Test](https://github.com/strehk/oidc-mock/actions/workflows/test.yml/badge.svg)](https://github.com/strehk/oidc-mock/actions/workflows/test.yml)
+
 **A fake OpenID Connect provider for local development – users in a YAML file, one click to sign
 in, and a Vite plugin that keeps login working on your phone.**
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/login-dark.png">
-    <img src="docs/login-light.png" alt="The oidc-mock login page: one button per configured user, and a box for custom claims" width="420">
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/strehk/oidc-mock/main/docs/login-dark.png">
+    <img src="https://raw.githubusercontent.com/strehk/oidc-mock/main/docs/login-light.png" alt="The oidc-mock login page: one button per configured user, and a box for custom claims" width="420">
   </picture>
 </p>
 
@@ -46,18 +49,10 @@ oidc-mock is a small Node package instead:
 
 ## Quick start
 
-oidc-mock is not on npm yet. Install the built package from the
-[latest release](https://github.com/strehk/oidc-mock/releases/latest):
-
 ```sh
-npm i -D https://github.com/strehk/oidc-mock/releases/download/v0.1.1/oidc-mock-0.1.1.tgz
-# or: bun add -d <same URL>
+npm i -D oidc-mock            # or: bun add -d oidc-mock / pnpm add -D oidc-mock
 npx oidc-mock init            # writes an example oidc-mock.yaml
 ```
-
-Installing straight from the repository (`npm i -D github:strehk/oidc-mock`) works with npm,
-which builds the package on install. Bun does not run that build step for Git dependencies, so
-use the release tarball there.
 
 ### With Vite (SvelteKit, Nuxt, Astro, Remix, plain Vite, …)
 
@@ -371,7 +366,8 @@ bun run build     # → dist/
 ```
 
 Releases: bump `version` in `package.json`, then push a tag `v<version>`. The workflow tests,
-builds and attaches the packed tarball to a GitHub release.
+builds, publishes to npm with provenance (trusted publishing, no token) and creates a GitHub
+release with the tarball attached.
 
 ```sh
 git tag v0.1.1 && git push --tags

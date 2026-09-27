@@ -1,0 +1,58 @@
+# oidc-mock configuration
+#
+# Edits to `users`, `clients`, `tokens` and `custom_login` apply without a restart.
+# `host`, `port`, `base_path`, `issuer` and `key_file` need one.
+
+# Back channel: where the app's server reaches the provider. The issuer is
+# http://<host>:<port><base_path>, the discovery URL that plus /.well-known/openid-configuration.
+host: 127.0.0.1
+port: 8090
+base_path: /oidc
+
+# Leave `clients` out to accept any client_id without a secret.
+# clients:
+#   - client_id: my-app
+#     client_secret: dev-secret        # omit for public clients (PKCE)
+#     redirect_uris: ['http://*:5173/*', 'https://*:5173/*']
+
+tokens:
+  access_token_ttl: 1h
+  id_token_ttl: 1h
+  refresh_token_ttl: 30d
+
+# Show the “custom claims” box on the login page.
+custom_login: true
+
+# One button per user on the login page. `claims` go into the id token, the access token and
+# userinfo; `sub` is fixed per user, so the app sees the same account every time.
+users:
+  - sub: admin
+    label: Admin
+    description: Every permission
+    claims:
+      email: admin@example.org
+      email_verified: true
+      given_name: Ada
+      family_name: Admin
+      preferred_username: ada
+      locale: en
+      roles: [admin]
+
+  - sub: member
+    label: Member
+    description: Plain account without roles
+    claims:
+      email: member@example.org
+      email_verified: true
+      given_name: Max
+      family_name: Member
+      preferred_username: max
+      locale: en
+      roles: []
+
+  - sub: no-email
+    label: Without email
+    description: Edge case – the email claim is missing
+    claims:
+      given_name: Nora
+      family_name: Noemail

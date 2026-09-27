@@ -4,8 +4,21 @@
 	"description": "OpenID Connect provider for local development: users and claims in one YAML file, a login page to pick them, and a Vite plugin that makes it work behind --host.",
 	"license": "MIT",
 	"author": "Tade Strehk <tade@strehk.eu>",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/strehk/oidc-mock.git"
+	},
+	"homepage": "https://github.com/strehk/oidc-mock#readme",
+	"bugs": "https://github.com/strehk/oidc-mock/issues",
 	"type": "module",
-	"keywords": ["oidc", "openid-connect", "oauth2", "mock", "dev-server", "vite-plugin"],
+	"keywords": [
+		"oidc",
+		"openid-connect",
+		"oauth2",
+		"mock",
+		"dev-server",
+		"vite-plugin"
+	],
 	"engines": {
 		"node": ">=20"
 	},
@@ -22,9 +35,13 @@
 			"default": "./dist/vite.js"
 		}
 	},
-	"files": ["dist", "examples"],
+	"files": [
+		"dist",
+		"examples"
+	],
 	"scripts": {
 		"build": "rm -rf dist && tsc -p tsconfig.build.json",
+		"prepare": "tsc -p tsconfig.build.json",
 		"dev": "bun --watch src/cli.ts --config examples/oidc-mock.yaml",
 		"test": "bun test",
 		"typecheck": "tsc --noEmit",

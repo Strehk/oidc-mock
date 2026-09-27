@@ -26,7 +26,14 @@ jobs:
       - run: bun run build
       - name: Check that the tag matches package.json
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
-      - run: npm publish --provenance --ignore-scripts
+      - name: Publish to npm unless this version is already there
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          if npm view "oidc-mock@$version" version >/dev/null 2>&1; then
+            echo "oidc-mock@$version is already on npm, skipping publish"
+          else
+            npm publish --provenance --ignore-scripts
+          fi
       - run: npm pack --ignore-scripts
       - name: Create release with the tarball
         env:

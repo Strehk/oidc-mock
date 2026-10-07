@@ -6,10 +6,10 @@
 	"author": "Tade Strehk <tade@strehk.eu>",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/strehk/oidc-mock.git"
+		"url": "git+https://github.com/Strehk/oidc-mock.git"
 	},
-	"homepage": "https://github.com/strehk/oidc-mock#readme",
-	"bugs": "https://github.com/strehk/oidc-mock/issues",
+	"homepage": "https://github.com/Strehk/oidc-mock#readme",
+	"bugs": "https://github.com/Strehk/oidc-mock/issues",
 	"type": "module",
 	"keywords": [
 		"oidc",

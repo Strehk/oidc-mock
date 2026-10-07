@@ -6,13 +6,14 @@ import type { SigningKey } from './keys.js';
  * Authorization codes and refresh tokens are signed JWTs as well. The mock keeps no session state
  * besides a set of redeemed codes, so a restart loses nothing – the key is on disk.
  */
-export type TokenKind = 'code' | 'access' | 'id' | 'refresh';
+export type TokenKind = 'code' | 'access' | 'id' | 'refresh' | 'subject';
 
 const typ: Record<TokenKind, string> = {
 	code: 'oidc-mock-code+jwt',
 	access: 'at+jwt',
 	id: 'JWT',
-	refresh: 'oidc-mock-refresh+jwt'
+	refresh: 'oidc-mock-refresh+jwt',
+	subject: 'oidc-mock-subject+jwt'
 };
 
 /** What an authorization code and a refresh token carry, so both can be turned into tokens. */

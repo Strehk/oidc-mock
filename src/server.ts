@@ -67,7 +67,7 @@ export async function startServer(options: StartOptions = {}): Promise<MockServe
 	const config = watchConfig(initial);
 	const provider = createProvider({ config, key: await loadOrCreateKey(initial.key_file) });
 	handler = (req, res) => {
-		provider.handle(req, res).then((handled) => {
+		provider.handle(req, res, { managementApi: true }).then((handled) => {
 			if (handled) return;
 			res.writeHead(302, { Location: `${config().base_path}/.well-known/openid-configuration` });
 			res.end();

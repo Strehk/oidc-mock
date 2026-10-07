@@ -214,3 +214,97 @@ describe('config reload', () => {
 		}
 	});
 });
+
+describe('impersonation (Logto-style token exchange)', () => {
+	const post = (path: string, body: Record<string, string>, auth?: string) =>
+		fetch(new URL(path, mock.issuer), {
+			method: 'POST',
+			headers: auth ? { Authorization: auth } : {},
+			body: new URLSearchParams(body)
+		});
+
+	async function subjectToken(userId: string) {
+		const m2m = await post('/oidc/token', {
+			grant_type: 'client_credentials',
+			resource: 'https://default.logto.app/api',
+			scope: 'all'
+		}, `Basic ${btoa('confidential:s3cret')}`);
+		expect(m2m.status).toBe(200);
+		const { access_token } = await m2m.json();
+
+		const created = await fetch(new URL('/api/subject-tokens', mock.issuer), {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ userId })
+		});
+		expect(created.status).toBe(201);
+		return ((await created.json()) as { subjectToken: string }).subjectToken;
+	}
+
+	const exchange = (subject_token: string, extra: Record<string, string> = {}) =>
+		post('/oidc/token', {
+			grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+			client_id: 'app',
+			subject_token,
+			subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+			...extra
+		});
+
+	test('discovery advertises the grants', () => {
+		expect(config.serverMetadata().grant_types_supported).toContain(
+			'urn:ietf:params:oauth:grant-type:token-exchange'
+		);
+	});
+
+	test('subject token for a preset user becomes an access token with its claims', async () => {
+		const res = await exchange(await subjectToken('admin'), { resource: 'https://api.app.test' });
+		expect(res.status).toBe(200);
+		const body = await res.json();
+		expect(body.issued_token_type).toBe('urn:ietf:params:oauth:token-type:access_token');
+		const introspection = await client.tokenIntrospection(config, body.access_token);
+		expect(introspection).toMatchObject({
+			active: true,
+			sub: 'admin',
+			aud: 'https://api.app.test',
+			email: 'admin@example.org',
+			roles: [{ name: 'admin' }]
+		});
+		expect(introspection.act).toBeUndefined();
+	});
+
+	test('actor token adds act, subject tokens are single-use', async () => {
+		const token = await subjectToken('member');
+		const actor = await exchange(await subjectToken('admin'));
+		const res = await exchange(token, {
+			actor_token: (await actor.json()).access_token,
+			actor_token_type: 'urn:ietf:params:oauth:token-type:access_token'
+		});
+		const introspection = await client.tokenIntrospection(config, (await res.json()).access_token);
+		expect(introspection).toMatchObject({ sub: 'member', act: { sub: 'admin' } });
+
+		const again = await exchange(token);
+		expect(again.status).toBe(400);
+		expect((await again.json()).error_description).toContain('already used');
+	});
+
+	test('users outside the YAML get a token with only the sub', async () => {
+		const res = await exchange(await subjectToken('from-the-database'));
+		const introspection = await client.tokenIntrospection(config, (await res.json()).access_token);
+		expect(introspection.sub).toBe('from-the-database');
+		expect(introspection.email).toBeUndefined();
+	});
+
+	test('subject-tokens needs a bearer token', async () => {
+		const res = await fetch(new URL('/api/subject-tokens', mock.issuer), {
+			method: 'POST',
+			body: JSON.stringify({ userId: 'admin' })
+		});
+		expect(res.status).toBe(401);
+	});
+
+	test('a bogus subject token is rejected', async () => {
+		const res = await exchange('nope');
+		expect(res.status).toBe(400);
+		expect((await res.json()).error).toBe('invalid_grant');
+	});
+});

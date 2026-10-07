@@ -11,9 +11,18 @@ export type ProviderOptions = {
 	key: SigningKey;
 };
 
+export type HandleOptions = {
+	/**
+	 * Also serve the Logto-style Management API (`POST <base_path without /oidc>/api/subject-tokens`).
+	 * It lives outside `base_path`, so only the back channel turns it on – in the Vite middleware it
+	 * could shadow the app's own `/api` routes.
+	 */
+	managementApi?: boolean;
+};
+
 export type Provider = {
 	/** Handles the request if its path is below `base_path` and returns whether it did. */
-	handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>;
+	handle(req: IncomingMessage, res: ServerResponse, options?: HandleOptions): Promise<boolean>;
 	metadata(): Record<string, unknown>;
 };
 
@@ -31,9 +40,26 @@ class OAuthError extends Error {
 const tokenMeta = new Set(['client_id', 'scope', 'auth_time', 'azp', 'nonce', 'sid']);
 
 const codeTtl = 120;
+/** Logto's subject tokens live for ten minutes as well. */
+const subjectTokenTtl = 600;
+
+const tokenExchangeGrant = 'urn:ietf:params:oauth:grant-type:token-exchange';
+const tokenTypes = {
+	access_token: 'urn:ietf:params:oauth:token-type:access_token',
+	id_token: 'urn:ietf:params:oauth:token-type:id_token',
+	jwt: 'urn:ietf:params:oauth:token-type:jwt'
+};
+
+/** Logto puts its Management API next to the issuer: `<origin>/oidc` → `<origin>/api`. */
+function managementApiPath(basePath: string) {
+	return basePath.replace(/\/oidc$/, '') + '/api';
+}
 
 export function createProvider({ config: getConfig, key }: ProviderOptions): Provider {
-	/** Codes are single-use. Stateless JWTs otherwise, so only redeemed ones need remembering. */
+	/**
+	 * Codes and subject tokens are single-use. Stateless JWTs otherwise, so only redeemed ones need
+	 * remembering.
+	 */
 	const redeemedCodes = new Map<string, number>();
 
 	function metadata() {
@@ -52,7 +78,7 @@ export function createProvider({ config: getConfig, key }: ProviderOptions): Pro
 			revocation_endpoint: `${issuer}/revoke`,
 			response_types_supported: ['code'],
 			response_modes_supported: ['query'],
-			grant_types_supported: ['authorization_code', 'refresh_token'],
+			grant_types_supported: ['authorization_code', 'refresh_token', 'client_credentials', tokenExchangeGrant],
 			subject_types_supported: ['public'],
 			id_token_signing_alg_values_supported: ['RS256'],
 			token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
@@ -63,14 +89,16 @@ export function createProvider({ config: getConfig, key }: ProviderOptions): Pro
 		};
 	}
 
-	async function handle(req: IncomingMessage, res: ServerResponse) {
+	async function handle(req: IncomingMessage, res: ServerResponse, options: HandleOptions = {}) {
 		const config = getConfig();
 		const url = new URL(req.url ?? '/', 'http://oidc-mock');
 		const base = config.base_path;
-		if (url.pathname !== base && !url.pathname.startsWith(base + '/')) return false;
+		const subjectTokens = options.managementApi && url.pathname === `${managementApiPath(base)}/subject-tokens`;
+		if (!subjectTokens && url.pathname !== base && !url.pathname.startsWith(base + '/')) return false;
 		const path = url.pathname.slice(base.length) || '/';
 
 		try {
+			if (subjectTokens && req.method === 'POST') return await createSubjectToken(config, req, res);
 			if (req.method === 'OPTIONS') {
 				cors(res);
 				res.writeHead(204).end();
@@ -257,6 +285,8 @@ export function createProvider({ config: getConfig, key }: ProviderOptions): Pro
 		cors(res);
 		const client = authenticateClient(config, req, form);
 		const grantType = form.get('grant_type');
+		if (grantType === 'client_credentials') return await clientCredentials(config, client, form, res);
+		if (grantType === tokenExchangeGrant) return await tokenExchange(config, client, form, res);
 		let grant: Grant;
 
 		if (grantType === 'authorization_code') {
@@ -342,6 +372,132 @@ export function createProvider({ config: getConfig, key }: ProviderOptions): Pro
 		return json(res, 200, response);
 	}
 
+	/** Machine-to-machine: the client is the subject, there is no user and no id token. */
+	async function clientCredentials(config: MockConfig, client: MockClient, form: URLSearchParams, res: ServerResponse) {
+		const scope = form.get('scope') ?? '';
+		res.setHeader('Cache-Control', 'no-store');
+		return json(res, 200, {
+			token_type: 'Bearer',
+			expires_in: config.tokens.access_token_ttl,
+			scope,
+			access_token: await sign(key, 'access', { client_id: client.client_id, scope }, {
+				issuer: config.issuer,
+				audience: requestedAudience(form) ?? client.client_id,
+				subject: client.client_id,
+				ttl: config.tokens.access_token_ttl
+			})
+		});
+	}
+
+	/**
+	 * Logto's `POST /api/subject-tokens`: mints a short-lived token for any user, to be exchanged
+	 * at the token endpoint – that is how Logto does impersonation. Needs an access token from the
+	 * mock (typically from `client_credentials`), like the real one needs an M2M token.
+	 */
+	async function createSubjectToken(config: MockConfig, req: IncomingMessage, res: ServerResponse) {
+		const bearer = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1] ?? '';
+		try {
+			await verify(key, 'access', bearer, config.issuer);
+		} catch {
+			res.setHeader('WWW-Authenticate', 'Bearer error="invalid_token"');
+			return json(res, 401, { error: 'invalid_token', error_description: 'Missing or invalid access token.' });
+		}
+		let body: { userId?: unknown; context?: unknown };
+		try {
+			body = JSON.parse((await readBody(req)) || '{}');
+		} catch {
+			throw new OAuthError('invalid_request', 'The body is no valid JSON.');
+		}
+		if (typeof body.userId !== 'string' || !body.userId) throw new OAuthError('invalid_request', 'userId is missing.');
+
+		// Users outside the YAML are fine: they may have signed in with custom claims, which the mock
+		// does not keep. Their exchanged token then carries only the sub.
+		const preset = config.users.some((user) => user.sub === body.userId);
+		const subjectToken = await sign(key, 'subject', { preset, context: body.context ?? {} }, {
+			issuer: config.issuer,
+			audience: config.issuer,
+			subject: body.userId,
+			ttl: subjectTokenTtl
+		});
+		return json(res, 201, { subjectToken, expiresIn: subjectTokenTtl });
+	}
+
+	/**
+	 * RFC 8693 token exchange. The subject token is one from `/api/subject-tokens` (impersonation,
+	 * the Logto way) or any access or id token the mock issued (delegation). An `actor_token` adds
+	 * the `act` claim.
+	 */
+	async function tokenExchange(config: MockConfig, client: MockClient, form: URLSearchParams, res: ServerResponse) {
+		const subjectToken = form.get('subject_token');
+		if (!subjectToken) throw new OAuthError('invalid_request', 'subject_token is missing.');
+		const subject = await readExchangedToken(config, subjectToken, form.get('subject_token_type'), 'subject');
+
+		let act = subject.act;
+		const actorToken = form.get('actor_token');
+		if (actorToken) {
+			const actor = await readExchangedToken(config, actorToken, form.get('actor_token_type'), 'actor');
+			act = { sub: actor.sub, ...(act ? { act } : {}) };
+		}
+
+		const scope = form.get('scope') ?? subject.scope ?? '';
+		res.setHeader('Cache-Control', 'no-store');
+		return json(res, 200, {
+			issued_token_type: tokenTypes.access_token,
+			token_type: 'Bearer',
+			expires_in: config.tokens.access_token_ttl,
+			scope,
+			access_token: await sign(
+				key,
+				'access',
+				{ ...subject.claims, client_id: client.client_id, scope, ...(act ? { act } : {}) },
+				{
+					issuer: config.issuer,
+					audience: requestedAudience(form) ?? client.client_id,
+					subject: subject.sub,
+					ttl: config.tokens.access_token_ttl
+				}
+			)
+		});
+	}
+
+	/** Resolves a subject or actor token of a token exchange to its sub and user claims. */
+	async function readExchangedToken(
+		config: MockConfig,
+		token: string,
+		type: string | null,
+		role: 'subject' | 'actor'
+	): Promise<{ sub: string; claims: Record<string, unknown>; scope?: string; act?: unknown }> {
+		if (!type) throw new OAuthError('invalid_request', `${role}_token_type is missing.`);
+		if (!Object.values(tokenTypes).includes(type)) {
+			throw new OAuthError('invalid_request', `${role}_token_type "${type}" is not supported.`);
+		}
+
+		if (role === 'subject') {
+			const minted = await verify(key, 'subject', token, config.issuer).catch(() => undefined);
+			if (minted) {
+				pruneRedeemed();
+				if (redeemedCodes.has(minted.jti!)) throw new OAuthError('invalid_grant', 'The subject token was already used.');
+				redeemedCodes.set(minted.jti!, minted.exp!);
+				const sub = minted.sub!;
+				// Claims come from the YAML at exchange time, like on refresh.
+				const user = minted.preset ? config.users.find((candidate) => candidate.sub === sub) : undefined;
+				if (minted.preset && !user) throw new OAuthError('invalid_grant', `User "${sub}" was removed from the config.`);
+				return { sub, claims: user ? withoutReserved(user.claims) : {} };
+			}
+		}
+
+		for (const kind of ['access', 'id'] as const) {
+			const payload = await verify(key, kind, token, config.issuer).catch(() => undefined);
+			if (!payload) continue;
+			const { act, scope, ...rest } = withoutReserved(payload);
+			const claims = Object.fromEntries(
+				Object.entries(rest).filter(([claim]) => !tokenMeta.has(claim) && claim !== 'at_hash')
+			);
+			return { sub: payload.sub!, claims, scope: typeof scope === 'string' ? scope : undefined, act };
+		}
+		throw new OAuthError('invalid_grant', `The ${role}_token is invalid or expired.`);
+	}
+
 	async function userinfo(config: MockConfig, req: IncomingMessage, res: ServerResponse) {
 		cors(res);
 		const header = req.headers.authorization;
@@ -394,6 +550,11 @@ export function createProvider({ config: getConfig, key }: ProviderOptions): Pro
 	}
 
 	return { handle, metadata };
+}
+
+/** RFC 8707 `resource` (what Logto uses) or RFC 8693 `audience` – the access token's `aud`. */
+function requestedAudience(form: URLSearchParams) {
+	return form.get('resource') ?? form.get('audience') ?? undefined;
 }
 
 function safeEqual(a: string, b: string) {

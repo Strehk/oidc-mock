@@ -301,7 +301,7 @@ All below the issuer, e.g. `http://127.0.0.1:8090/oidc`:
 | `/.well-known/openid-configuration` | discovery; `/.well-known/oauth-authorization-server` too                                                                                  |
 | `/jwks`                             | the RS256 public key                                                                                                                      |
 | `/authorize`                        | `response_type=code`; PKCE `S256` and `plain`; `state`, `nonce`; `prompt=none` answers `login_required`; RFC 9207 `iss` in the response |
-| `/token`                            | `authorization_code`, `refresh_token`; client auth `none`, `client_secret_basic`, `client_secret_post`                                    |
+| `/token`                            | `authorization_code`, `refresh_token`, `client_credentials`, token exchange (RFC 8693); client auth `none`, `client_secret_basic`, `client_secret_post` |
 | `/userinfo`                         | `GET` and `POST`, bearer token                                                                                                            |
 | `/introspect`                       | access, refresh and id tokens                                                                                                             |
 | `/revoke`                           | accepts and ignores                                                                                                                       |
@@ -316,9 +316,35 @@ What the tokens contain:
 - **Codes:** single-use, valid for two minutes.
 - **CORS:** open on all JSON endpoints, so browser-only SPAs can call the token endpoint directly.
 
-What is deliberately missing: implicit and hybrid flows, client credentials, device flow, dynamic
+Outside the issuer, on the back channel only (standalone server or the plugin's loopback port):
+
+| Path                       | Supports                                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------- |
+| `/api/subject-tokens`      | Logto's Management API endpoint for impersonation, see [below](#impersonation-via-token-exchange) |
+
+The path follows Logto's layout: the issuer minus a trailing `/oidc`, plus `/api`.
+
+What is deliberately missing: implicit and hybrid flows, device flow, dynamic
 client registration, `request` objects, encrypted tokens and consent screens. If you need one of
 them, open an issue.
+
+### Impersonation via token exchange
+
+The mock supports the flow Logto uses for impersonation, so the same code runs against both:
+
+1. Get an M2M token: `grant_type=client_credentials` at `/token`. Any client works unless
+   `clients` is configured; `resource` becomes the audience.
+2. `POST /api/subject-tokens` with that token as bearer and `{"userId": "<sub>"}` as JSON. The
+   answer is `{"subjectToken", "expiresIn"}`, valid for ten minutes and single-use.
+3. Exchange it at `/token` with
+   `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`, `subject_token`,
+   `subject_token_type=urn:ietf:params:oauth:token-type:access_token` and optionally `resource`,
+   `scope` and an `actor_token` (adds `act: { sub }`).
+
+The issued access token carries the user's claims from the YAML, read at exchange time. A `userId`
+that is not in the YAML works too – for users that exist only in your app's database – but its
+token carries only the `sub`. Any access or id token from the mock is accepted as `subject_token`
+as well, for plain delegation.
 
 ## Programmatic use and tests
 

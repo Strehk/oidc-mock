@@ -1,5 +1,5 @@
 export { startServer, type MockServer, type StartOptions } from './server.js';
-export { createProvider, type Provider, type ProviderOptions } from './provider.js';
+export { createProvider, type HandleOptions, type Provider, type ProviderOptions } from './provider.js';
 export {
 	loadConfigFile,
 	resolveConfig,
